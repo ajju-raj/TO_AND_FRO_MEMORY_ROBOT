@@ -1,0 +1,370 @@
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h>
+#include <ESP8266WebServer.h>
+#include <ArduinoOTA.h>
+
+unsigned long tim=millis();
+class Stack { 
+    int top; 
+    int len;
+public: 
+    int a[101]; 
+    Stack() { 
+      top = -1; 
+      len=0;
+    } 
+    void push(int x); 
+    int pop(); 
+    int le();
+    bool isEmpty();
+}; 
+ 
+void Stack::push(int x) 
+{ 
+        a[++top] = x; 
+        len++;  
+} 
+  
+int Stack::pop() 
+{ 
+        int x = a[top--]; 
+        len--;
+        return x; 
+} 
+int Stack::le(){
+  return len;
+}
+
+bool Stack::isEmpty() {
+    return (len == 0);
+}
+
+
+
+const char *ssid = "Redmi Note 10T 5G";
+const char *password = "123456789";
+ESP8266WebServer server(80);
+const int motorAPin1 = D1; // GPIO5
+const int motorAPin2 = D2; // GPIO4
+const int motorBPin1 = D3; // GPIO0
+const int motorBPin2 = D4; // GPIO2
+const int enA = D5;
+const int enB = D6;
+
+int SPEED = 901;
+int speed_Coeff = 3;
+
+Stack in;
+Stack ti; 
+void setup() {
+ Serial.begin(115200);
+  // Connect to Wi-Fi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(250);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+  // Initialize motor control pins
+  pinMode(motorAPin1, OUTPUT);
+  pinMode(motorAPin2, OUTPUT);
+  pinMode(motorBPin1, OUTPUT);
+  pinMode(motorBPin2, OUTPUT);
+  pinMode(enB, OUTPUT);
+  pinMode(enA, OUTPUT);
+  analogWrite(enA , SPEED);
+  analogWrite(enB , SPEED);
+  // Set up web server routes
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/forward", HTTP_GET, handleForward);
+  server.on("/backward", HTTP_GET, handleBackward);
+  server.on("/left", HTTP_GET, handleLeft);
+  server.on("/right", HTTP_GET, handleRight);
+  server.on("/stop",  HTTP_GET, handleStop);
+  server.on("/reverse", HTTP_GET,handleReverse);
+  server.on("/submit", HTTP_GET, handleSubmit);
+  // Start the server
+  server.begin();
+}
+void loop() {
+  server.handleClient();
+}
+void handleRoot() {
+  String webpage = R"(
+ <html>
+<head>
+  <script>
+    var isWKeyPressed = false;
+    var isSKeyPressed = false;
+    var isDKeyPressed = false;
+    var isAKeyPressed = false;
+    var isRKeyPressed = false;
+    var keyPressStartTime = 0;
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'w' && !isWKeyPressed) {
+        isWKeyPressed = true;
+        keyPressStartTime = Date.now();
+        moveForward();
+      } else if (event.key === 's' && !isSKeyPressed) {
+        isSKeyPressed = true;
+        keyPressStartTime = Date.now();
+        moveBackward();
+      } else if (event.key === 'a' && !isAKeyPressed) {
+        isAKeyPressed = true;
+        keyPressStartTime = Date.now();
+        moveLeft();
+      } else if (event.key === 'd' && !isDKeyPressed) {
+        isDKeyPressed = true;
+        keyPressStartTime = Date.now();
+        moveRight();
+      } else if (event.key === 'r' && !isRKeyPressed) {
+        isRKeyPressed = true;
+        keyPressStartTime = Date.now();
+        reverse();
+      }
+    });
+    document.addEventListener('keyup', function(event) {
+      if (event.key === 'w') {
+        isWKeyPressed = false;
+        // stopMoving();
+        var keyPressDuration = Date.now() - keyPressStartTime;
+        sendKeyPressData(event.key, keyPressDuration);
+      } else if (event.key === 's') {
+        isSKeyPressed = false;
+       //  stopMoving();
+        var keyPressDuration = Date.now() - keyPressStartTime;
+      sendKeyPressData(event.key, keyPressDuration);
+      } else if (event.key === 'a') {
+        isAKeyPressed = false;
+        // stopMoving();
+        var keyPressDuration = Date.now() - keyPressStartTime;
+      sendKeyPressData(event.key, keyPressDuration);
+      } else if (event.key === 'd') {
+        isDKeyPressed = false;
+        //stopMoving();
+        var keyPressDuration = Date.now() - keyPressStartTime;
+      sendKeyPressData(event.key, keyPressDuration);
+      } else if (event.key === 'r') {
+        isRKeyPressed = false;
+      }
+      // Calculate key press duration and send it to the server
+    });
+    function sendKeyPressData(key, duration) {
+      fetch('/submit?key=' + key + '&duration=' + duration);
+    }
+    function moveForward() {
+      fetch('/forward');
+    }
+    function stopMoving() {
+      fetch('/stop');
+    }
+    function moveBackward() {
+      fetch('/backward');
+    }
+    function moveLeft() {
+      fetch('/left');
+    }
+    function moveRight() {
+      fetch('/right');
+    }
+    function reverse() {
+      fetch('/reverse');
+    }
+  </script>
+</head>
+<body>
+  <h1><b><i><u>WIFI CAR CONTROL SYSTEM</u></i></b></h1>
+  <ul>
+    <li>W: Forward</li>
+    <li>A: Left</li>
+    <li>S: Backward</li>
+    <li>D: Right</li>
+    <li>R: Reroute</li>
+  </ul>
+</body>
+</html>
+  )";
+  server.send(200, "text/html", webpage);
+}
+
+unsigned long currentTime;
+unsigned long previousTime;
+const unsigned long timeStep = 1000; // 1 second
+
+void handleForward() {
+  Serial.println("Going Forward");
+  moveForward();
+  server.send(200, "text/plain", "Moving forward");
+  currentTime = millis();
+  previousTime = currentTime;
+  // while (currentTime - previousTime < timeStep) {
+  //   currentTime = millis();
+  // }
+  // stopCar();
+}
+
+void handleBackward() {
+  Serial.println("Going Backward");
+  moveBackward();
+  server.send(200, "text/plain", "Moving backward");
+  currentTime = millis();
+  previousTime = currentTime;
+  // while (currentTime - previousTime < timeStep) {
+  //   currentTime = millis();
+  // }
+  // stopCar();
+}
+
+void handleLeft() {
+  Serial.println("Going Left");
+  moveLeft();
+  server.send(200, "text/plain", "Turning left");
+  currentTime = millis();
+  previousTime = currentTime;
+  // while (currentTime - previousTime < timeStep) {
+  //   currentTime = millis();
+  // }
+  // stopCar();
+}
+
+void handleRight() {
+  Serial.println("Going Right");
+  moveRight();
+  server.send(200, "text/plain", "Turning right");
+  currentTime = millis();
+  previousTime = currentTime;
+  // while (currentTime - previousTime < timeStep) {
+  //   currentTime = millis();
+  // }
+  // stopCar();
+}
+
+void handleStop() {
+  Serial.println("         ");
+  stopCar();
+  server.send(200, "text/plain", "Stopped");
+}
+
+void handleReverse(){
+  Serial.println("----------------------------");
+  Serial.println("Reversing");
+  reverse();  
+  server.send(200, "text/plain", "Reversing");
+}
+
+void handleSubmit() {
+  String key = server.arg("key");
+  String durationStr = server.arg("duration");
+  if (key.length() > 0 && durationStr.length() > 0) {
+    char keyCode = key.charAt(0);  // Extract the first character as the key code
+    int duration = durationStr.toInt();  // Convert duration string to integer
+    stopCar();
+    if(keyCode=='w'){
+    in.push(0);
+    ti.push(duration);
+    }
+    else if(keyCode=='s'){
+    in.push(1);
+    ti.push(duration);
+    }
+    else if(keyCode=='a'){
+    in.push(2);
+    ti.push(duration);
+    }
+    else if(keyCode=='d'){
+    in.push(3);
+    ti.push(duration);
+    }
+    // Use the key code and duration as needed
+    Serial.print("Key: ");
+    Serial.println(keyCode);
+    Serial.print("Duration: ");
+    Serial.println(duration);
+  }
+  server.send(200, "text/plain", "Data received");
+}
+void moveForward() {
+  analogWrite(enA, SPEED);
+  digitalWrite(motorAPin1, LOW);
+  digitalWrite(motorAPin2, HIGH);
+  digitalWrite(motorBPin1, LOW);
+  digitalWrite(motorBPin2, HIGH);
+  analogWrite(enB, SPEED);
+  // in.push(0);
+}
+void moveBackward() {
+  analogWrite(enA, SPEED);
+  digitalWrite(motorAPin1, HIGH);
+  digitalWrite(motorAPin2, LOW);
+  digitalWrite(motorBPin1, HIGH);
+  digitalWrite(motorBPin2, LOW);
+  analogWrite(enB, SPEED);
+  // in.push(1);
+}
+void moveLeft() {
+  analogWrite(enA, SPEED);
+  digitalWrite(motorAPin1, LOW);
+  digitalWrite(motorAPin2, HIGH);
+  digitalWrite(motorBPin1, HIGH);
+  digitalWrite(motorBPin2, LOW);
+  analogWrite(enB, SPEED/speed_Coeff);
+  // in.push(2);
+}
+void moveRight() {
+  analogWrite(enA, SPEED/speed_Coeff);
+  digitalWrite(motorAPin1, HIGH);
+  digitalWrite(motorAPin2, LOW);
+  digitalWrite(motorBPin1, LOW);
+  digitalWrite(motorBPin2, HIGH);
+  analogWrite(enB, SPEED);
+  // in.push(3);
+}
+void stopCar() {
+  analogWrite(enA, 10);
+  digitalWrite(motorAPin1, LOW);
+  digitalWrite(motorAPin2, LOW);
+  digitalWrite(motorBPin1, LOW);
+  digitalWrite(motorBPin2, LOW);
+  analogWrite(enB, 10);
+}
+void reverse(){
+  for(int i = 0;i<in.le();i++){
+    if(!(in.isEmpty())){
+      if(!(ti.isEmpty())){
+        int cmd = in.pop();
+        int time = ti.pop();
+        Serial.print("Duration: ");
+        Serial.println(time);
+        Serial.print("command: ");
+        Serial.println(cmd);
+        unsigned long startTime = millis(); // Record the start time
+        unsigned long timeout = 1000; // Timeout set to 10 seconds
+
+        if(cmd == 0 && time > 0){// Forward
+          Serial.println("moving backward");
+          moveBackward();
+          while (millis() - startTime < time) {}
+        } 
+        else if(cmd == 1 && time > 0){ // Backward
+          Serial.println("moving forward");
+          moveForward();
+        while (millis() - startTime < time) {} 
+        }
+        else if(cmd == 2 && time > 0){ // Left
+          Serial.println("moving right");
+          moveRight();
+          while (millis() - startTime < time) {} 
+        }
+        else if(cmd == 3 && time > 0){ // Right
+          Serial.println("moving left");
+          moveLeft();
+          while (millis() - startTime < time) {} 
+        }
+        server.send(200, "text/plain", "Data received");
+      }
+    }
+  }
+}
